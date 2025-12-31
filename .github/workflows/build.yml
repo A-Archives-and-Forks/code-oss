@@ -23,7 +23,7 @@ jobs:
       latest_tag: ${{ steps.get_release_tag.outputs.latest_tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: Resolve target VSCode version
         id: get_release_tag
@@ -69,22 +69,22 @@ jobs:
     if: needs.check_update.outputs.should_build == 'true'
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       # git clone --branch x.y.z --single-branch https://github.com/microsoft/vscode.git --depth=1
       - name: Checkout VSCode repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           repository: microsoft/vscode
           ref: ${{ needs.check_update.outputs.latest_tag }}
           path: vscode
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           repository: microsoft/vscode-loc
           path: vscode-loc
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v6
         with:
           node-version-file: vscode/.nvmrc
 
@@ -172,7 +172,7 @@ jobs:
           provenance: true
 
       - name: Release on GitHub
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check_update.outputs.latest_tag }}
           draft: false
