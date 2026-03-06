@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Optional VSCode version (x.y.z)"
+        description: "Optional VSCode version (x.y or x.y.z)"
         required: false
         type: string
   schedule:
@@ -20,7 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
-      latest_tag: ${{ steps.get_release_tag.outputs.latest_tag }}
+      vscode_ref: ${{ steps.get_release_tag.outputs.vscode_ref }}
+      package_version: ${{ steps.get_release_tag.outputs.package_version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -30,13 +31,26 @@ jobs:
         run: |
           INPUT_VERSION="${{ github.event.inputs.version }}"
           if [ -n "$INPUT_VERSION" ]; then
-            # Normalize to plain version without leading 'v'
-            RESOLVED_VERSION="${INPUT_VERSION#v}"
+            RAW_VERSION="${INPUT_VERSION#v}"
           else
-            RESOLVED_VERSION=$(curl -s https://api.github.com/repos/microsoft/vscode/releases/latest | jq -r .tag_name)
+            RAW_VERSION=$(curl -s https://api.github.com/repos/microsoft/vscode/releases/latest | jq -r .tag_name)
           fi
-          echo "Using version: $RESOLVED_VERSION"
-          echo "latest_tag=$RESOLVED_VERSION" >> $GITHUB_OUTPUT
+
+          RAW_VERSION="${RAW_VERSION#v}"
+
+          if [[ "$RAW_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            PACKAGE_VERSION="${RAW_VERSION}.0"
+          elif [[ "$RAW_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            PACKAGE_VERSION="$RAW_VERSION"
+          else
+            echo "Unsupported VSCode version format: $RAW_VERSION"
+            exit 1
+          fi
+
+          echo "Using VSCode ref: $RAW_VERSION"
+          echo "Using package version: $PACKAGE_VERSION"
+          echo "vscode_ref=$RAW_VERSION" >> $GITHUB_OUTPUT
+          echo "package_version=$PACKAGE_VERSION" >> $GITHUB_OUTPUT
 
       - name: Get current package.json version
         id: get_current_version
@@ -50,12 +64,12 @@ jobs:
         run: |
           cd code-oss
           CURRENT_VERSION="${{ steps.get_current_version.outputs.current_version }}"
-          LATEST_TAG="${{ steps.get_release_tag.outputs.latest_tag }}"
+          PACKAGE_VERSION="${{ steps.get_release_tag.outputs.package_version }}"
           INPUT_VERSION="${{ github.event.inputs.version }}"
           if [ -n "$INPUT_VERSION" ]; then
-            echo "Manual version input provided; forcing build for ${LATEST_TAG}"
+            echo "Manual version input provided; forcing build for ${PACKAGE_VERSION}"
             echo "should_build=true" >> $GITHUB_OUTPUT
-          elif [ "$(printf '%s\n' "${CURRENT_VERSION}" "${LATEST_TAG}" | sort -V | head -n1)" = "${CURRENT_VERSION}" ] && [ "${CURRENT_VERSION}" != "${LATEST_TAG}" ]; then
+          elif [ "$(printf '%s\n' "${CURRENT_VERSION}" "${PACKAGE_VERSION}" | sort -V | head -n1)" = "${CURRENT_VERSION}" ] && [ "${CURRENT_VERSION}" != "${PACKAGE_VERSION}" ]; then
             echo "Version is less than latest tag"
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
@@ -76,7 +90,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: microsoft/vscode
-          ref: ${{ needs.check_update.outputs.latest_tag }}
+          ref: ${{ needs.check_update.outputs.vscode_ref }}
           path: vscode
       - uses: actions/checkout@v6
         with:
@@ -118,7 +132,7 @@ jobs:
           cp -vR vscode/.build/web/extensions code-oss/
           rsync -vt vscode/resources/server/* code-oss/
 
-          cd code-oss && npm version "${{ needs.check_update.outputs.latest_tag }}" --no-git-tag-version
+          cd code-oss && npm version "${{ needs.check_update.outputs.package_version }}" --no-git-tag-version
 
       # - name: Setup Pages
       #   uses: actions/configure-pages@v4
@@ -141,7 +155,7 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
           # git commit --allow-empty --author="github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
-          git commit -m "chore: bump version to ${{ needs.check_update.outputs.latest_tag }}"
+          git commit -m "chore: bump version to ${{ needs.check_update.outputs.package_version }}"
           git push origin HEAD:${GITHUB_REF_NAME}
 
           origin="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"          
@@ -152,7 +166,7 @@ jobs:
           git branch -M gh-pages
           git remote add origin $origin
           git add -A
-          git commit --allow-empty-message -m "${{ needs.check_update.outputs.latest_tag }}"
+          git commit --allow-empty-message -m "${{ needs.check_update.outputs.package_version }}"
           git push -f origin gh-pages
 
       - name: Package build
@@ -174,7 +188,7 @@ jobs:
       - name: Release on GitHub
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.check_update.outputs.latest_tag }}
+          tag_name: ${{ needs.check_update.outputs.package_version }}
           draft: false
           generate_release_notes: false
           files: |
