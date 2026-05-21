@@ -101,6 +101,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version-file: vscode/.nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
       - name: Install Dependencies
         run: |
@@ -178,12 +180,10 @@ jobs:
           npm pack
 
       - name: Publishing on NPM
-        uses: JS-DevTools/npm-publish@v4
-        with:
-          token: ${{ secrets.NPM_TOKEN }}
-          package: ./code-oss
-          access: public
-          provenance: true
+        run: |
+          npm install -g npm@latest
+          cd code-oss
+          npm publish --provenance 
 
       - name: Release on GitHub
         uses: softprops/action-gh-release@v3
